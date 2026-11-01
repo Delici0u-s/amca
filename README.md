@@ -389,28 +389,38 @@ Concretely:
 
 ## Shell completion
 
-**Usually nothing to do.** The first time you run amca interactively it writes
-a completion script to your shell's per-user completion directory and says so
-once. bash and fish pick it up on the next shell.
+**Nothing to do.** The first time you run amca in a terminal, it sets up tab
+completion for the shell in `$SHELL` and says so once. Open a new terminal and
+it works. The setup has two parts:
 
-zsh only reads directories on `$fpath`, so it needs one extra line:
+- the script, in the shell's per-user completion directory
+  (`~/.local/share/bash-completion/completions/amca`,
+  `~/.local/share/zsh/site-functions/_amca`, `~/.config/fish/completions/amca.fish`);
+- for bash and zsh, a delimited `# >>> amca completion >>>` block in
+  `~/.bashrc` / `~/.zshrc` that loads it. zsh reads no per-user directory on
+  its own, and bash reads that directory only through the bash-completion
+  package, which minimal systems, macOS and many custom rc files don't load.
+  fish needs no block.
+
+The block works anywhere in the rc file, before or after your own `compinit`,
+and does nothing once the script is gone. amca refreshes both parts silently
+whenever an upgrade changes them, so they never go stale.
 
 ```bash
-amca completions --install --rc     # adds a delimited block to ~/.zshrc
-exec zsh
-```
-
-```bash
-amca completions --status           # per shell: installed? active? which helper?
-amca completions --uninstall        # removes the file(s) and the rc block
+amca completions --status           # per shell: active, installed or not, which helper?
+amca completions --install          # set it up now (or again), for $SHELL or a named shell
+amca completions --install --no-rc  # script only; prints the block to add yourself
+amca completions --uninstall        # removes script and rc block, and stops auto-setup
 amca completions bash > somewhere   # just print it
-export AMCA_NO_AUTO_COMPLETION=1    # opt out entirely
+export AMCA_NO_AUTO_COMPLETION=1    # opt out without uninstalling
 ```
 
 A wheel cannot run code at install time (PEP 427), so `pip`, `pipx` and `uv
-tool` have no way to register completions — only a distro package can. Doing it
-on first run is the closest equivalent that works for every install method.
-Nothing is added to a shell rc file unless you pass `--rc`.
+tool` have no way to register completions. Only a distro package can, by
+putting the script into `/usr/share/zsh/site-functions` and similar, which
+every shell already reads. That's why completion "just works" for programs
+from dnf or apt. Every user-level install (pipx, uv, cargo, Homebrew) needs an
+rc line instead; amca writes it for you on first run.
 
 bash and fish autoload by command name, so `amcapl` gets its own file alongside
 `amca`'s; zsh binds both from a single `#compdef` line.
@@ -419,9 +429,11 @@ bash and fish autoload by command name, so `amcapl` gets its own file alongside
 install off `PATH` still completes — but the alias needs registering:
 
 ```bash
-amca completions --install --command a3
-# zsh also needs, in your rc:  compdef _amca a3
+amca completions --install --command a3        # an alias for amca
+amca completions --install --pl-command ap     # an alias for amcapl
 ```
+
+Aliases are remembered, so later refreshes keep them.
 
 Completion is dynamic: plugin names, markers and config keys come from amca at
 completion time, so installing a plugin or changing the prefix takes effect
