@@ -12,6 +12,7 @@ from ..core.paths import remove_tree
 from ..plugins.registry import Registry
 from ..plugins.sources import Source, parse_source
 from . import common
+from .complete import AVAILABLE_PLUGIN, DIRS, PLUGIN, PLUGIN_ARGS, steer
 from .prompt import confirm, interactive, multiselect, select
 
 __all__ = ["build_parser", "main"]
@@ -47,13 +48,13 @@ def build_parser() -> argparse.ArgumentParser:
         ("toggle", "t", "flip plugin(s) between enabled and disabled", _toggle),
     ):
         parser_ = sub.add_parser(name, aliases=[alias], help=help_text)
-        parser_.add_argument("plugins", nargs="*", metavar="PLUGIN")
+        steer(parser_.add_argument("plugins", nargs="*", metavar="PLUGIN"), PLUGIN)
         parser_.set_defaults(handler=handler)
 
     install = sub.add_parser("install", aliases=["i"], help="fetch plugin(s) from a source")
-    install.add_argument("plugins", nargs="*", metavar="PLUGIN")
-    install.add_argument("--source", default=None,
-                         help="use only this source instead of plugins.sources")
+    steer(install.add_argument("plugins", nargs="*", metavar="PLUGIN"), AVAILABLE_PLUGIN)
+    steer(install.add_argument("--source", default=None,
+                               help="use only this source instead of plugins.sources"), DIRS)
     install.add_argument("--no-enable", action="store_true",
                          help="install without enabling")
     install.add_argument("--force", action="store_true",
@@ -61,19 +62,19 @@ def build_parser() -> argparse.ArgumentParser:
     install.set_defaults(handler=_install)
 
     uninstall = sub.add_parser("uninstall", aliases=["u"], help="delete plugin(s) from disk")
-    uninstall.add_argument("plugins", nargs="*", metavar="PLUGIN")
+    steer(uninstall.add_argument("plugins", nargs="*", metavar="PLUGIN"), PLUGIN)
     uninstall.add_argument("-y", "--yes", action="store_true")
     uninstall.set_defaults(handler=_uninstall)
 
     update = sub.add_parser("update", aliases=["up"], help="re-fetch installed plugin(s)")
-    update.add_argument("plugins", nargs="*", metavar="PLUGIN",
-                        help="omit or pass '*' for everything installed")
+    steer(update.add_argument("plugins", nargs="*", metavar="PLUGIN",
+                              help="omit or pass '*' for everything installed"), PLUGIN)
     update.set_defaults(handler=_update)
 
     call = sub.add_parser("call", aliases=["c"],
                           help="run one plugin directly, bypassing should_load")
-    call.add_argument("plugin", nargs="?")
-    call.add_argument("args", nargs=argparse.REMAINDER, metavar="ARG")
+    steer(call.add_argument("plugin", nargs="?"), PLUGIN)
+    steer(call.add_argument("args", nargs=argparse.REMAINDER, metavar="ARG"), PLUGIN_ARGS)
     call.set_defaults(handler=_call)
 
     return parser

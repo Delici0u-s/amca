@@ -13,6 +13,7 @@ from ..plugins.markers import UnknownMarker, split_argv
 from ..plugins.registry import Registry
 from . import common
 from .commands import args_edit, completions_cmd, config_cmd, doctor, root_cmd, run_cmd
+from .complete import offers_markers
 
 __all__ = ["build_parser", "main"]
 
@@ -68,6 +69,7 @@ def build_parser(
         epilog=_epilog(prefix, markers or []),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    offers_markers(parser)
     common.add_global_flags(parser, marker_prefix=prefix)
     parser.add_argument("--dry-run", action="store_true",
                         help="show what would run without running it")
@@ -77,6 +79,7 @@ def build_parser(
     run_parser = sub.add_parser("run", aliases=["r"],
                                 help="run applicable plugins (default)")
     run_parser.set_defaults(handler=run_cmd.handle)
+    offers_markers(run_parser)
 
     root_cmd.register(sub)
     args_edit.register(sub)
@@ -130,6 +133,13 @@ def _handle_plugins(ctx: amcaContext, args: argparse.Namespace, _: dict[str, lis
 
 def _main(argv: Sequence[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+
+    # Tab completion: called by the shell glue on every tab press. Before
+    # anything else, so it never logs, prompts or runs the first-run hook.
+    if raw[:1] == ["__complete"]:
+        from .complete import main as complete_main
+
+        return complete_main(raw[1:])
 
     # The marker prefix must be known before argv can be split, but it lives in
     # config, which lives behind --config-dir. A hand-rolled scan rather than a

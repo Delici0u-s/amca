@@ -11,9 +11,13 @@ Skipped when the shell is not installed, so CI on a minimal image stays green.
 
 from __future__ import annotations
 
+import os
+import shlex
 import shutil
 import subprocess
+import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -22,19 +26,51 @@ from amca.cli import completions
 BASH = shutil.which("bash")
 pytestmark = pytest.mark.skipif(BASH is None, reason="bash not installed")
 
+REPO = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="module")
+def helper(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """An `amca` executable running this checkout against a throwaway config
+    with meson and autoscript installed and the default marker prefix.
+
+    The scripts call amca by absolute path; this is that path. Nothing here
+    reads the developer's real config (a non-default marker prefix there used
+    to fail these tests).
+    """
+    base = tmp_path_factory.mktemp("helper")
+    env = {
+        "PYTHONPATH": f"{REPO / 'src'}{os.pathsep}{REPO / 'plugins'}",
+        "AMCA_CONFIG_DIR": str(base / "config"),
+        "AMCA_STATE_DIR": str(base / "state"),
+        "AMCA_NO_AUTO_COMPLETION": "1",
+    }
+    exports = "".join(f"export {key}={shlex.quote(value)}\n" for key, value in env.items())
+    wrapper = base / "amca"
+    wrapper.write_text(f"#!/bin/sh\n{exports}exec {shlex.quote(sys.executable)} -m amca.cli.amca_cli \"$@\"\n")
+    wrapper.chmod(0o755)
+    subprocess.run([sys.executable, "-m", "amca.cli.amcapl_cli", "install", "meson", "autoscript",
+                    "--source", "builtin"], env={**os.environ, **env}, check=True,
+                   capture_output=True)
+    return str(wrapper)
+
+
+@pytest.fixture(scope="module")
+def script(helper: str) -> str:
+    return completions.script_for("bash", helper=helper)
+
 
 def _complete(script: str, line: str) -> list[str]:
-    """Return the candidates bash's `_amca`/`_amcapl` would offer for *line*.
-
-    A trailing space means the cursor sits on a new, empty word — the case that
-    the marker bug turned into "every marker and nothing else".
-    """
+    """Return what bash's `_amca`/`_amcapl` puts in COMPREPLY for *line*,
+    the cursor at its end, as bash itself would call it."""
     func = "_amcapl" if line.split()[0] == "amcapl" else "_amca"
     harness = textwrap.dedent(
         f"""
         {script}
-        COMP_WORDS=({line})
-        [[ "{line}" == *" " ]] && COMP_WORDS+=("")
+        COMP_LINE={shlex.quote(line)}
+        COMP_POINT=${{#COMP_LINE}}
+        read -ra COMP_WORDS <<< "$COMP_LINE"
+        [[ "$COMP_LINE" == *" " ]] && COMP_WORDS+=("")
         COMP_CWORD=$(( ${{#COMP_WORDS[@]}} - 1 ))
         COMPREPLY=()
         {func}
@@ -47,76 +83,86 @@ def _complete(script: str, line: str) -> list[str]:
     return [line for line in out.stdout.splitlines() if line]
 
 
-@pytest.fixture(scope="module")
-def script() -> str:
-    return completions.script_for("bash")
+def test_script_is_syntactically_valid(script: str) -> None:
+    subprocess.run([BASH, "-n"], input=script, text=True, check=True)
 
 
-def test_script_is_syntactically_valid() -> None:
-    for shell in ("bash",):
-        text = completions.script_for(shell)
-        subprocess.run([BASH, "-n"], input=text, text=True, check=True)
-
-
-def test_bare_command_offers_subcommands(script: str) -> None:
-    """`amca <TAB>` must list commands.
-
-    Regression: the marker loop used `[[ "$m" == "$cur"* ]]`, which every
-    marker satisfies when $cur is empty, and then returned early.
-    """
+def test_bare_command_offers_subcommands_in_order(script: str) -> None:
     got = _complete(script, "amca ")
-    assert "config" in got
-    assert "doctor" in got
-    assert "plugins" in got
+    commands = [c for c in got if not c.startswith("---")]
+    assert commands[:3] == ["run", "r", "new"], "definition order, aliases next to their command"
+    assert "doctor" in got and "plugins" in got
+    assert "---meson" in got
 
 
 def test_subcommand_values_are_not_shadowed_by_markers(script: str) -> None:
     got = _complete(script, "amca config ")
-    assert "set" in got
-    assert "describe" in got
+    assert "set" in got and "describe" in got
+    assert not any(c.startswith("---") for c in got)
 
 
-def test_prefix_still_narrows_to_markers(script: str) -> None:
+def test_prefix_narrows_to_markers(script: str) -> None:
     got = _complete(script, "amca ---")
-    assert got, "markers must still be offered"
-    assert all(candidate.startswith("---") for candidate in got)
+    assert got == ["---autoscript", "---meson"]
 
 
 def test_option_values_are_exact(script: str) -> None:
-    assert sorted(_complete(script, "amca --log-mode ")) == [
-        "both",
-        "console",
-        "file",
-        "silent",
-    ]
+    assert _complete(script, "amca --log-mode ") == ["console", "file", "both", "silent"]
+
+
+def test_option_equals_value(script: str) -> None:
+    """bash breaks words at '='; the glue must still complete the value."""
+    assert _complete(script, "amca --log-mode=f") == ["file"]
+
+
+def test_plugin_flags_complete(script: str) -> None:
+    got = _complete(script, "amca ---meson --sk")
+    assert got == ["--skip"]
+    assert "compile" in _complete(script, "amca ---meson ")
+
+
+def test_amcapl_call_completes_the_plugins_arguments(script: str) -> None:
+    assert _complete(script, "amcapl call meson --cl") == ["--clean", "--clear", "--clear-console"]
 
 
 def test_compreply_does_not_leak_between_invocations(script: str) -> None:
-    """The marker branch appends; bash does not clear COMPREPLY for us."""
     harness = textwrap.dedent(
         f"""
         {script}
+        COMP_LINE="amca --log-mode "; COMP_POINT=${{#COMP_LINE}}
         COMP_WORDS=(amca --log-mode ""); COMP_CWORD=2; _amca
-        COMP_WORDS=(amca "");            COMP_CWORD=1; _amca
+        COMP_LINE="amca con"; COMP_POINT=${{#COMP_LINE}}
+        COMP_WORDS=(amca con);           COMP_CWORD=1; _amca
         printf '%s\\n' "${{COMPREPLY[@]}}"
         """
     )
     out = subprocess.run(
         [BASH, "-c", harness], capture_output=True, text=True, check=True
     )
-    assert "console" not in out.stdout.split()
+    assert out.stdout.split() == ["config"]
 
 
-def test_falls_back_to_filenames(script: str) -> None:
-    """Plugin arguments are usually paths; amca cannot know a plugin's flags."""
-    assert "-o default" in script
+def test_missing_helper_falls_back_to_files(tmp_path: Path) -> None:
+    """amca uninstalled but the script left behind: plain file completion,
+    no error text in the terminal."""
+    script = completions.script_for("bash", helper=str(tmp_path / "gone"))
+    harness = textwrap.dedent(
+        f"""
+        PATH=/nonexistent
+        {script}
+        COMP_LINE="amca "; COMP_POINT=5; COMP_WORDS=(amca ""); COMP_CWORD=1
+        _amca; echo "status=$?"
+        """
+    )
+    out = subprocess.run([BASH, "-c", harness], capture_output=True, text=True)
+    assert "status=0" in out.stdout and out.stderr == ""
 
 
 def test_fish_ships_a_separate_amcapl_file() -> None:
     """fish autoloads completions/<command>.fish, so amcapl needs its own."""
     assert completions._sibling_name("fish") == "amcapl.fish"
     pl = completions._pl_script_for("fish")
-    assert "complete -c amcapl" in pl
+    assert "(__amca_complete amcapl)" in pl
     assert "@AMCA" not in pl, "placeholders must be substituted"
 
 
@@ -133,7 +179,6 @@ def test_zsh_binds_both_commands_from_one_file() -> None:
 # nothing (the original zsh bug).
 
 import json
-import os
 from pathlib import Path
 
 ZSH = shutil.which("zsh")
@@ -274,6 +319,16 @@ def test_zsh_block_binds_amca(home: Path, user_rc: str) -> None:
 
 
 @pytest.mark.skipif(ZSH is None, reason="zsh not installed")
+def test_resourcing_the_rc_file_drops_a_stale_script(home: Path) -> None:
+    """A shell that loaded an older _amca must get the new one from
+    `source ~/.zshrc`, not only from a new terminal."""
+    completions.install("zsh")
+    out = _interactive(ZSH, home, "_amca() { print stale }; source ~/.zshrc; "
+                                  "functions _amca | grep -c stale")
+    assert out.strip() == "0"
+
+
+@pytest.mark.skipif(ZSH is None, reason="zsh not installed")
 def test_zsh_block_before_users_compinit(home: Path) -> None:
     completions.install("zsh")
     rc = home / ".zshrc"
@@ -295,3 +350,54 @@ def test_state_file_is_json(home: Path) -> None:
     state = home / "state"
     completions.save_state(state, {"shell": "bash"})
     assert json.loads((state / completions.MARKER_FILENAME).read_text()) == {"shell": "bash"}
+
+
+# ── zsh, driven through a pseudo-terminal ───────────────────────────────────
+#
+# zsh completion only runs inside the line editor, so these start a real
+# interactive zsh on a pty (zsh's own zpty module), press TAB, and read the
+# listing it prints.
+
+_ZPTY = r"""
+zmodload zsh/zpty
+zpty z env HOME="$HOME" PATH="$PATH" TERM=dumb COLUMNS=200 LINES=200 zsh -f
+zpty -w z 'PS1="%% "; fpath=("$FPATH_DIR" $fpath); autoload -Uz compinit; compinit -i -D'
+zpty -w z 'zstyle ":completion:*" format "[%d]"; zstyle ":completion:*" group-name ""'
+zpty -w -n z "$LINE"$'\t'
+out=""
+for i in {1..100}; do
+  while zpty -r -t z chunk; do out+=$chunk; done
+  [[ $out == *"$UNTIL"* ]] && break
+  sleep 0.1
+done
+print -r -- "$out"
+zpty -d z
+"""
+
+
+def _zsh_tab(helper: str, tmp_path: Path, line: str, until: str) -> list[str]:
+    fpath = tmp_path / "fpath"
+    fpath.mkdir()
+    (fpath / "_amca").write_text(completions.script_for("zsh", helper=helper))
+    env = {**os.environ, "FPATH_DIR": str(fpath), "LINE": line, "UNTIL": until}
+    out = subprocess.run([ZSH, "-f", "-c", _ZPTY], capture_output=True, text=True,
+                         env=env, timeout=60).stdout
+    import re
+
+    text = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", out).replace("\r", "")
+    return [row.rstrip() for row in text.splitlines() if row.strip()]
+
+
+@pytest.mark.skipif(ZSH is None, reason="zsh not installed")
+def test_zsh_lists_commands_in_order_with_aliases(helper: str, tmp_path: Path) -> None:
+    rows = _zsh_tab(helper, tmp_path, "amca ", "[plugin marker]")
+    start = rows.index("[command]")
+    assert rows[start + 1].split()[:2] == ["run,", "r"], rows
+    assert rows[start + 2].split()[:2] == ["new,", "n"], rows
+    assert "[plugin marker]" in rows
+
+
+@pytest.mark.skipif(ZSH is None, reason="zsh not installed")
+def test_zsh_completes_plugin_flags(helper: str, tmp_path: Path) -> None:
+    rows = _zsh_tab(helper, tmp_path, "amca ---meson -", "--print-template")
+    assert any(row.startswith("--skip, -n") for row in rows), rows

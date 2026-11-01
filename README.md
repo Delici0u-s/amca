@@ -230,6 +230,28 @@ my-plugin/
         __init__.py
 ```
 
+**Tab completion of your plugin's arguments** works without extra code if
+`load()` parses `ctx.args` with argparse before doing anything else: during a
+tab press, amca runs `load()` with `dry_run=True` and stops it at that first
+`parse_args`/`parse_known_args`, then completes against the parser it caught.
+Nothing after that line runs. To skip running `load()` at all, return the
+parser from `parser()` instead:
+
+```python
+    def parser(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--out").complete = "dirs"   # files | dirs | commands | none
+        return parser
+```
+
+An argument's `complete` attribute can also be a function
+`(current_word) -> [value, ...]` or `[(value, description), ...]`, for values
+only your plugin knows. Plugins that don't use argparse can define
+`complete(self, ctx, words)` instead, and `completion = False` keeps amca from
+ever running `load()` for completion. A plugin that hangs or prints during that
+capture just gets file-name completion; the wait is capped by
+`completion.plugin_timeout_ms`.
+
 Start from the `example` plugin rather than from one of the real presets:
 
 ```bash
@@ -435,10 +457,21 @@ amca completions --install --pl-command ap     # an alias for amcapl
 
 Aliases are remembered, so later refreshes keep them.
 
-Completion is dynamic: plugin names, markers and config keys come from amca at
-completion time, so installing a plugin or changing the prefix takes effect
-immediately. That costs one `amca` invocation per keypress. The helpers are
-scriptable on their own:
+**What completes:** every command, subcommand, alias and flag, in the order
+they're defined (aliases share a line with their command in zsh); option
+values and choices; config keys with their descriptions, and the valid values
+for `config set <key>`; plugin names and markers; and, after a marker, the
+plugin's own flags and values, taken from the plugin's argparse parser (see
+[Writing a plugin](#writing-a-plugin)). `amcapl call <plugin>` completes that
+plugin's arguments too.
+
+The installed scripts hold no knowledge of amca: each tab press runs
+`amca __complete`, which answers from the same parsers a real run uses. A new
+flag, plugin or marker prefix completes immediately, without regenerating
+anything, at the cost of one short amca start per tab press. Only the plugin
+whose marker is active gets loaded.
+
+These print the same lists, for your own scripts:
 
 ```bash
 amca plugins --names

@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from .. import __version__
 from ..config.schema import SCHEMA
 from ..core.context import amcaContext
+from .complete import COMMANDS, DIRS, NOTHING, steer
 
 __all__ = ["add_global_flags", "apply_global_flags", "build_context", "pre_scan", "run_entry"]
 
@@ -41,8 +42,8 @@ def add_global_flags(parser: argparse.ArgumentParser, *, marker_prefix: str = "-
     )
     group.add_argument("--version", action="version",
                        version=f"%(prog)s {__version__}")
-    group.add_argument("--config-dir", metavar="DIR", default=None,
-                       help="use a different config directory for this run")
+    steer(group.add_argument("--config-dir", metavar="DIR", default=None,
+                             help="use a different config directory for this run"), DIRS)
     group.add_argument("--debug", action="store_true", default=None,
                        help="print extra diagnostics and full tracebacks")
     group.add_argument("--log-mode", dest="log_mode", default=None,
@@ -51,13 +52,16 @@ def add_global_flags(parser: argparse.ArgumentParser, *, marker_prefix: str = "-
                        choices=SCHEMA["log.level"].choices)
     group.add_argument("--log-prefix", dest="log_prefix", default=None,
                        choices=SCHEMA["log.prefix"].choices)
-    group.add_argument("--plugin-dir", dest="plugin_dir", metavar="DIR", default=None,
-                       help="look for installed plugins here instead")
+    steer(group.add_argument("--plugin-dir", dest="plugin_dir", metavar="DIR", default=None,
+                             help="look for installed plugins here instead"), DIRS)
     group.add_argument("--depth", type=int, metavar="N", default=None,
                        help="how far up to search for an amca root")
-    group.add_argument("--editor", metavar="CMD", default=None)
-    group.add_argument("--marker-prefix", dest="marker_prefix", metavar="PREFIX", default=None,
-                       help=f"plugin marker prefix for this run (currently {marker_prefix!r})")
+    steer(group.add_argument("--editor", metavar="CMD", default=None,
+                             help="editor command for this run"), COMMANDS)
+    steer(group.add_argument("--marker-prefix", dest="marker_prefix", metavar="PREFIX",
+                             default=None,
+                             help=f"plugin marker prefix for this run (currently {marker_prefix!r})"),
+          NOTHING)
     group.add_argument("--on-error", dest="on_error", default=None,
                        choices=SCHEMA["plugins.on_error"].choices)
     group.add_argument("--on-missing", dest="on_missing", default=None,

@@ -18,6 +18,8 @@ underscores written as dashes: `my_plugin/` is reached as `---my-plugin`.
 
 from __future__ import annotations
 
+import argparse
+
 from amca.api import Plugin, PluginContext, PluginError
 from amca.core import proc
 
@@ -60,11 +62,15 @@ class example(Plugin):
         with no traceback. Anything else is caught and reported too, but reads
         like a crash — because it is one.
         """
-        if "--show" in ctx.args:
+        # Parse first, before any other work: tab completion relies on it (see
+        # `parser()` below). parse_known_args, because everything else is
+        # passed on to echo.
+        opts, _ = self.parser().parse_known_args(ctx.args)
+        if opts.show:
             self._show(ctx)
             return 0
 
-        if "--fail" in ctx.args:
+        if opts.fail:
             raise PluginError("this is what a clean failure looks like")
 
         # Always resolve external tools through proc: it honours
@@ -88,6 +94,29 @@ class example(Plugin):
         if code == 130:
             raise KeyboardInterrupt
         return code
+
+    # ── Tab completion ──────────────────────────────────────────────────────
+
+    def parser(self) -> argparse.ArgumentParser:
+        """The parser `load()` uses. Optional, and cheap on purpose.
+
+        `amca ---example -<TAB>` offers these flags with their help text. amca
+        calls this method during a tab press instead of running `load()`.
+        Without it, amca would run `load()` with `dry_run=True` and stop it at
+        the first `parse_args`/`parse_known_args`, which works too as long as
+        parsing comes first.
+
+        Steer an argument's values with a `complete` attribute:
+            parser.add_argument("--out").complete = "dirs"
+        ("files", "dirs", "commands", "none", or a function
+        `(current_word) -> [value or (value, description), ...]`).
+        """
+        parser = argparse.ArgumentParser(prog="amca ---example", add_help=False)
+        parser.add_argument("--show", action="store_true",
+                            help="print every PluginContext field and what it is for")
+        parser.add_argument("--fail", action="store_true",
+                            help="fail cleanly with a PluginError")
+        return parser
 
     # ── Everything the context gives you ────────────────────────────────────
 

@@ -33,6 +33,7 @@ still detected and adapted — see ``amca.plugins.loader``.
 from __future__ import annotations
 
 import abc
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -118,3 +119,36 @@ class Plugin(abc.ABC):
     @abc.abstractmethod
     def load(self, ctx: PluginContext) -> int | None:
         """Do the work. Return a process exit status; 0 or None means success."""
+
+    # ── Tab completion (all optional) ───────────────────────────────────────
+    #
+    # amca completes the words after this plugin's marker. It needs the
+    # plugin's argparse parser, found in this order:
+    #
+    #   1. ``parser()``, if it returns one. Cheap and side-effect free: prefer it.
+    #   2. Otherwise amca calls ``load()`` with ``dry_run=True`` and stops it at
+    #      the first ``parse_args``/``parse_known_args`` call, taking that
+    #      parser. So: parse your arguments before doing anything else in
+    #      ``load()``.
+    #   3. ``complete()``, for plugins that don't use argparse at all.
+    #
+    # An argument can carry a ``complete`` attribute to steer its values:
+    # ``"files"``, ``"dirs"``, ``"commands"``, ``"none"``, or a callable
+    # ``(current_word) -> iterable of str or (str, description)``:
+    #
+    #     parser.add_argument("--out").complete = "dirs"
+
+    #: Set to False if ``load()`` must never run during tab completion.
+    completion: bool = True
+
+    def parser(self) -> argparse.ArgumentParser | None:
+        """The parser ``load()`` uses for ``ctx.args``, or None."""
+        return None
+
+    def complete(self, ctx: PluginContext, words: list[str]) -> list[str | tuple[str, str]] | None:
+        """Candidates for the last of *words* (the one being typed), or None.
+
+        Only for plugins without an argparse parser. Return values or
+        ``(value, description)`` pairs; amca filters them by what was typed.
+        """
+        return None

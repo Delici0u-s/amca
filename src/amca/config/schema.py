@@ -132,6 +132,11 @@ def _validate_folder_name(value: Any) -> None:
         )
 
 
+def _validate_non_negative(value: Any) -> None:
+    if int(value) < 0:
+        raise ConfigError("must be >= 0")
+
+
 def _validate_depth(value: Any) -> None:
     if int(value) < 1:
         raise ConfigError("root.search_depth: must be >= 1")
@@ -189,6 +194,10 @@ _FIELDS: tuple[Field, ...] = (
           choices=("selected", "all")),
     Field("plugins.announce_loaded", "bool", False,
           "Log a line each time a plugin is selected and run."),
+    Field("completion.plugin_timeout_ms", "int", 1000,
+          "How long tab completion waits for a plugin to reveal its arguments "
+          "before giving up and offering file names. 0 disables plugin argument completion.",
+          validate=_validate_non_negative),
     Field("plugins.sources", "list",
           ["github:Delici0u-s/amca@main:plugins/amca_presets"],
           "Where `amcapl install` looks for plugins. 'builtin' means the copies "

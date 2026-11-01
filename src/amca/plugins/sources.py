@@ -18,7 +18,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 __all__ = ["BuiltinSource", "GitHubSource", "LocalSource", "Source", "parse_source"]
 
@@ -27,6 +27,9 @@ class Source:
     """A place plugins can be fetched from."""
 
     label: str = "?"
+    #: True when listing needs the network. Shell completion skips these: a tab
+    #: press must never wait on an HTTP request.
+    remote: ClassVar[bool] = False
 
     def list_plugins(self) -> list[str]:
         raise NotImplementedError
@@ -107,6 +110,7 @@ class GitHubSource(Source):
     ref: str = "main"
     subpath: str = ""
     label: str = ""
+    remote: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         self.label = f"github:{self.owner}/{self.repo}@{self.ref}:{self.subpath}"

@@ -87,6 +87,11 @@ class MarkerSplit:
     main: list[str] = field(default_factory=list)
     #: plugin name -> its argument list. Only names that appeared in argv.
     per_plugin: dict[str, list[str]] = field(default_factory=dict)
+    #: The plugin whose section argv ends in, or None for amca's own section.
+    #: Tab completion uses this to know whose arguments are being typed.
+    current: str | None = None
+    #: A bare ``--`` stopped marker scanning.
+    passthrough: bool = False
 
 
 def normalize(name: str) -> str:
@@ -163,8 +168,10 @@ def split_argv(
                 target.append(token)
                 continue
             current = result.per_plugin.setdefault(plugin, [])
+            result.current = plugin
             continue
 
         target.append(token)
 
+    result.passthrough = passthrough
     return result

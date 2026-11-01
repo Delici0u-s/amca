@@ -14,6 +14,7 @@ from ...core import proc
 from ...core.context import amcaContext
 from ...plugins.argfiles import write_template
 from ...plugins.registry import Registry
+from ..complete import PLUGIN, steer
 from ..prompt import select
 
 __all__ = ["register"]
@@ -23,7 +24,8 @@ __all__ = ["register"]
 def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     parser = sub.add_parser("args", aliases=["a"],
                             help="edit per-project default arguments for a plugin")
-    parser.add_argument("plugin", nargs="?", help="plugin name (omit to pick from a list)")
+    steer(parser.add_argument("plugin", nargs="?", help="plugin name (omit to pick from a list)"),
+          PLUGIN)
     parser.add_argument("--show", action="store_true", help="print instead of opening an editor")
     parser.set_defaults(handler=handle)
 

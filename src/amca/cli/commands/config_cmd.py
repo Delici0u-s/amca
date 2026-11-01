@@ -17,6 +17,7 @@ from ...config.schema import SCHEMA
 from ...config.store import ConfigError
 from ...core import paths, proc
 from ...core.context import amcaContext
+from ..complete import CONFIG_KEY, CONFIG_VALUE, DIRS, steer
 from ..prompt import confirm
 
 __all__ = ["register"]
@@ -44,16 +45,16 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     listing.set_defaults(handler=_list)
 
     getter = inner.add_parser("get", help="print one value")
-    getter.add_argument("key")
+    steer(getter.add_argument("key"), CONFIG_KEY)
     getter.set_defaults(handler=_get)
 
     setter = inner.add_parser("set", help="write one value to the config file")
-    setter.add_argument("key")
-    setter.add_argument("value")
+    steer(setter.add_argument("key"), CONFIG_KEY)
+    steer(setter.add_argument("value"), CONFIG_VALUE)
     setter.set_defaults(handler=_set)
 
     unsetter = inner.add_parser("unset", help="remove a value, reverting to the default")
-    unsetter.add_argument("key")
+    steer(unsetter.add_argument("key"), CONFIG_KEY)
     unsetter.set_defaults(handler=_unset)
 
     path = inner.add_parser("path", help="print the config file location")
@@ -63,12 +64,12 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     edit.set_defaults(handler=_edit)
 
     describe = inner.add_parser("describe", help="explain one setting")
-    describe.add_argument("key", nargs="?")
+    steer(describe.add_argument("key", nargs="?"), CONFIG_KEY)
     describe.set_defaults(handler=_describe)
 
     migrate = inner.add_parser("migrate", help="import settings from an amca 2.x install")
-    migrate.add_argument("--source", default=None, metavar="DIR",
-                         help="path to the old amca_config directory")
+    steer(migrate.add_argument("--source", default=None, metavar="DIR",
+                               help="path to the old amca_config directory"), DIRS)
     migrate.add_argument("--dry-run", action="store_true")
     migrate.add_argument("-y", "--yes", action="store_true")
     migrate.set_defaults(handler=_migrate)

@@ -7,6 +7,7 @@ import sys
 
 from ...core.context import amcaContext
 from .. import completions as comp
+from ..complete import NOTHING, steer
 
 __all__ = ["handle", "register"]
 
@@ -43,11 +44,12 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
                              "need the printed block added by hand)")
     # The default since the rc block became automatic; kept so old docs work.
     parser.add_argument("--rc", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--command", action="append", default=[], metavar="NAME",
-                        help="also complete this name as `amca` — for an alias or "
-                             "wrapper (repeatable)")
-    parser.add_argument("--pl-command", dest="pl_command", action="append", default=[],
-                        metavar="NAME", help="also complete this name as `amcapl`")
+    steer(parser.add_argument("--command", action="append", default=[], metavar="NAME",
+                              help="also complete this name as `amca` — for an alias or "
+                                   "wrapper (repeatable)"), NOTHING)
+    steer(parser.add_argument("--pl-command", dest="pl_command", action="append", default=[],
+                              metavar="NAME", help="also complete this name as `amcapl`"),
+          NOTHING)
     parser.set_defaults(handler=handle)
 
 
